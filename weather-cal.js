@@ -35,6 +35,25 @@ const layout = `
        
 `
 
+// --- Example Layout with Quote and Joke ---
+// const layout = `
+//   row
+//     column
+//       date
+//       quote
+//   row
+//     column
+//       joke
+//       battery
+//   row
+//     column
+//       current
+//       future
+//   row
+//     column
+//       events
+// `
+
 /*
  * CODE
  * Be more careful editing this section. 

@@ -1029,6 +1029,75 @@ const weatherCal = {
       })
     }
   },
+
+  // Set up the quote data object.
+  async setupQuote() {
+    const quoteSettings = this.settings.quote || {};
+    const cacheMinutes = parseInt(quoteSettings.cacheMinutes) || 60;
+    const quotePath = this.fm.joinPath(this.fm.libraryDirectory(), "weather-cal-quote-cache");
+    let quoteData = this.getCache(quotePath, cacheMinutes, cacheMinutes * 2); // Max age is 2x cache minutes
+
+    if (!quoteData || quoteData.cacheExpired) {
+      try {
+        const req = new Request("https://api.quotable.io/quotes/random?limit=1");
+        const response = await req.loadJSON();
+        if (response && response.length > 0) {
+          quoteData = { content: response[0].content, author: response[0].author, fetchedAt: this.now.getTime() };
+          this.fm.writeString(quotePath, JSON.stringify(quoteData));
+        } else {
+          throw new Error("Empty response from Quotable API");
+        }
+      } catch (e) {
+        console.error("Error fetching quote: " + e);
+        // Use cached data if available, even if expired, on error
+        if (quoteData && quoteData.content) {
+           // Keep existing data, but log that it's stale
+          console.log("Using stale quote data due to fetch error.");
+        } else {
+          quoteData = { content: "Could not fetch quote.", author: "Error", cacheExpired: true };
+        }
+      }
+    }
+    this.data.quote = quoteData;
+  },
+
+  // Set up the joke data object.
+  async setupJoke() {
+    const jokeSettings = this.settings.joke || {};
+    const cacheMinutes = parseInt(jokeSettings.cacheMinutes) || 60;
+    const jokePath = this.fm.joinPath(this.fm.libraryDirectory(), "weather-cal-joke-cache");
+    let jokeData = this.getCache(jokePath, cacheMinutes, cacheMinutes * 2); // Max age is 2x cache minutes
+
+    if (!jokeData || jokeData.cacheExpired) {
+      try {
+        const req = new Request("https://v2.jokeapi.dev/joke/Any?safe-mode&blacklistFlags=nsfw,religious,political,racist,sexist,explicit");
+        const response = await req.loadJSON();
+        if (response && !response.error) {
+          jokeData = {
+            type: response.type,
+            joke: response.joke,
+            setup: response.setup,
+            delivery: response.delivery,
+            category: response.category,
+            fetchedAt: this.now.getTime()
+          };
+          this.fm.writeString(jokePath, JSON.stringify(jokeData));
+        } else {
+          throw new Error(response.error || "Empty or error response from JokeAPI");
+        }
+      } catch (e) {
+        console.error("Error fetching joke: " + e);
+        // Use cached data if available, even if expired, on error
+        if (jokeData && (jokeData.joke || jokeData.setup)) {
+          // Keep existing data, but log that it's stale
+          console.log("Using stale joke data due to fetch error.");
+        } else {
+          jokeData = { joke: "Could not fetch joke.", category: "Error", cacheExpired: true };
+        }
+      }
+    }
+    this.data.joke = jokeData;
+  },
   
 /* 
  * Widget items
@@ -1501,6 +1570,57 @@ const weatherCal = {
         if (horizontal) { conditionStack.addSpacer() }
       }
       if (hourly) { myDate.setHours(myDate.getHours() + 1) }
+    }
+  },
+
+  // Display a quote.
+  async quote(column) {
+    if (!this.data.quote) { await this.setupQuote(); }
+
+    const quoteSettings = this.settings.quote || {};
+    const quoteFormat = this.format.quoteText || this.format.defaultText;
+    const authorFormat = this.format.quoteAuthor || this.format.defaultText;
+    const url = quoteSettings.url || null;
+
+    if (!this.data.quote || !this.data.quote.content) {
+      this.provideText("Could not fetch quote.", column, quoteFormat, true, url);
+      return;
+    }
+
+    this.provideText(this.data.quote.content, column, quoteFormat, true, url);
+    if (this.data.quote.author && this.data.quote.author !== "Error") {
+      const authorPrefix = quoteSettings.authorPrefix || "-";
+      this.provideText(`${authorPrefix} ${this.data.quote.author}`, column, authorFormat, true, url);
+    }
+  },
+
+  // Display a joke.
+  async joke(column) {
+    if (!this.data.joke) { await this.setupJoke(); }
+
+    const jokeSettings = this.settings.joke || {};
+    const jokeFormat = this.format.jokeText || this.format.defaultText;
+    const jokeCategoryFormat = this.format.jokeCategory || this.format.smallTemp; // Using smallTemp as a fallback
+    const url = jokeSettings.url || null;
+
+    if (!this.data.joke || (!this.data.joke.joke && !this.data.joke.setup)) {
+      this.provideText("Could not fetch joke.", column, jokeFormat, true, url);
+      return;
+    }
+
+    if (this.data.joke.type === "single") {
+      this.provideText(this.data.joke.joke, column, jokeFormat, true, url);
+    } else if (this.data.joke.type === "twopart") {
+      this.provideText(this.data.joke.setup, column, jokeFormat, true, url);
+      const spacerSize = jokeSettings.twopartSpacer !== undefined ? parseInt(jokeSettings.twopartSpacer) : (this.padding / 2);
+      if (spacerSize > 0) {
+        this.space(column, spacerSize);
+      }
+      this.provideText(this.data.joke.delivery, column, jokeFormat, true, url);
+    }
+
+    if (jokeSettings.showCategory && this.data.joke.category && this.data.joke.category !== "Error") {
+       this.provideText(`Category: ${this.data.joke.category}`, column, jokeCategoryFormat, true, url);
     }
   },
   
@@ -2152,6 +2272,22 @@ const weatherCal = {
           name: "Week label",
           type: "fonts",
         },
+        quoteText: { 
+          val: { size: "14", color: "", dark: "", font: "italic", caps: "" }, 
+          name: "Quote text", 
+          type: "fonts" 
+        },
+        quoteAuthor: { 
+          val: { size: "12", color: "ffffffcc", dark: "", font: "regular", caps: "" }, 
+          name: "Quote author", 
+          type: "fonts" 
+        },
+        jokeText: { 
+          val: { size: "14", color: "", dark: "", font: "regular", caps: "" }, 
+          name: "Joke text", 
+          type: "fonts" 
+        },
+        // jokePunchline: { val: { size: "14", color: "", dark: "", font: "regular", caps: "" }, name: "Joke punchline", type: "fonts" } // If separate styling is desired
       },
       date: {
         name: "Date",
@@ -2474,6 +2610,48 @@ const weatherCal = {
           val: "H:mm",
           name: "Date and/or time format for news items",
           description: 'The format to use if the publish date setting is "formatted".',
+        },
+      },
+      quote: {
+        name: "Quote of the Day",
+        cacheMinutes: { 
+          val: "60", 
+          name: "Cache duration (minutes)", 
+          description: "How long to keep a quote before fetching a new one." 
+        },
+        authorPrefix: {
+          val: "-",
+          name: "Author prefix",
+          description: "Text to display before the quote's author (e.g. '-', '~')."
+        },
+        url: { 
+          val: "", 
+          name: "URL to open when tapped", 
+          description: "Optional URL for quote item. Leave blank for no action." 
+        },
+      },
+      joke: {
+        name: "Joke of the Day",
+        cacheMinutes: { 
+          val: "60", 
+          name: "Cache duration (minutes)", 
+          description: "How long to keep a joke before fetching a new one." 
+        },
+        showCategory: {
+          val: false,
+          name: "Show joke category",
+          type: "bool",
+          description: "Whether to display the category of the joke."
+        },
+        twopartSpacer: {
+          val: "5", // Default to half of standard padding (this.padding is usually 10)
+          name: "Two-part joke spacer",
+          description: "Vertical space between setup and delivery for two-part jokes. Set to 0 for no space."
+        },
+        url: { 
+          val: "", 
+          name: "URL to open when tapped", 
+          description: "Optional URL for joke item. Leave blank for no action." 
         },
       },
     }

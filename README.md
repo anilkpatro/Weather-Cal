@@ -69,6 +69,8 @@ You can add the following items to your widget:
 - `date` 
 - `events` 
 - `greeting`
+- `joke`: Displays a random joke (supports single and two-part jokes).
+- `quote`: Displays a random quote with its author.
 - `reminders`
 - `sunrise`, which shows the sunrise or sunset time automatically
 - custom `text`, by writing `text(Your text here)`
